@@ -3,10 +3,13 @@ from django.http import HttpResponse
 from oauth2_provider.views.generic import ProtectedResourceView
 from rest_framework import viewsets
 
-from users.kafka_producer import producer
+from users.kafka_producer import producer, PRODUCER_AUTH_SERVICE
 
 from .models import User
 from .serializers import UserSerializer, UserUpdateSerializer
+from schema_validator import Validator
+from datetime import datetime
+import uuid
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -22,7 +25,11 @@ class UserViewSet(viewsets.ModelViewSet):
         result = super().create(request, *args, **kwargs)
         data = result.data
         event = {
-            "event_name": "AccountCreated",
+            "event_name": "UserCreated",
+            "event_id": str(uuid.uuid4()),
+            "event_version": 1,
+            "event_time": str(datetime.now()),
+            "producer": PRODUCER_AUTH_SERVICE,
             "data": {
                 "public_id": data.get("public_id"),
                 "email": data.get("email"),
@@ -32,7 +39,9 @@ class UserViewSet(viewsets.ModelViewSet):
                 "username": data.get("username"),
             },
         }
-        producer.send("accounts-stream", event)
+        event_result, errors = Validator().validate_data(schema_name='users.created', version=1, data=event)
+        if event_result:
+            producer.send("users-stream", event)
 
         return result
 
@@ -44,36 +53,57 @@ class UserViewSet(viewsets.ModelViewSet):
         data = result.data
         if new_role != old_role:
             event = {
-                "event_name": "AccountRoleChanged",
+                "event_id": str(uuid.uuid4()),
+                "event_version": 1,
+                "event_time": str(datetime.now()),
+                "producer": PRODUCER_AUTH_SERVICE,
+                "event_name": "UserRoleChanged",
                 "data": {
                     "public_id": str(user.public_id),
                     "role": new_role,
                 },
             }
-            producer.send("accounts", event)
+            result, errors = Validator().validate_data(
+                schema_name='users.role_changed',
+                version=1,
+                data=event
+            )
+            if result:
+                producer.send("users-role", event)
 
         event = {
-            "event_name": "AccountChanged",
+            "event_name": "UserChanged",
+            "event_id": str(uuid.uuid4()),
+            "event_version": 1,
+            "event_time": str(datetime.now()),
+            "producer": PRODUCER_AUTH_SERVICE,
             "data": {
                 "public_id": data.get("public_id") or str(user.public_id),
                 "first_name": data.get("first_name") or user.first_name,
                 "last_name": data.get("last_name") or user.last_name,
             },
         }
-        producer.send("accounts-stream", event)
+        event_result, errors = Validator().validate_data(schema_name='users.changed', version=1, data=event)
+        if event_result:
+            producer.send("users-stream", event)
         return result
 
     def destroy(self, request, *args, **kwargs):
         user = self.get_object()
         result = super().destroy(request, *args, **kwargs)
-        data = result.data
         event = {
-            "event_name": "AccountDeactivated",
+            "event_name": "UserDeactivated",
+            "event_id": str(uuid.uuid4()),
+            "event_version": 1,
+            "event_time": str(datetime.now()),
+            "producer": PRODUCER_AUTH_SERVICE,
             "data": {
                 "public_id": user.public_id,
             },
         }
-        producer.send("accounts-stream", event)
+        event_result, errors = Validator().validate_data(schema_name='users.deactivated', version=1, data=event)
+        if event_result:
+            producer.send("users-stream", event)
         return result
 
 

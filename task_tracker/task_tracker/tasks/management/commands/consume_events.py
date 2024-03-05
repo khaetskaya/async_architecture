@@ -5,16 +5,16 @@ from tasks.kafka.kafka_consumer import consumer
 
 class Command(BaseCommand):
     def handle(self, *args, **options):
-        consumer.subscribe(topics=["accounts", "accounts-stream"])
+        consumer.subscribe(topics=["users-role", "users-stream"])
         for message in consumer:
             value = message.value
             event_name = value["event_name"]
             data = value["data"]
             print("Received message: {}".format(value))
-            if event_name == "AccountCreated":
+            if event_name == "UserCreated":
                 User.objects.create(**message.value["data"])
 
-            elif event_name == "AccountRoleChanged":
+            elif event_name == "UserRoleChanged":
                 new_role = data["role"]
                 public_id = data["public_id"]
                 try:
@@ -24,7 +24,7 @@ class Command(BaseCommand):
                 except User.DoesNotExist:
                     User.objects.create(**message.value["data"])
 
-            elif event_name == "AccountChanged":
+            elif event_name == "UserChanged":
                 public_id = data["public_id"]
                 try:
                     user = User.objects.get(public_id=public_id)

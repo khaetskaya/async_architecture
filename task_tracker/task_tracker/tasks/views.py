@@ -1,12 +1,15 @@
 import random
+import uuid
 
 from rest_framework import generics, serializers, views
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-
+from tasks.kafka.kafka_producer import producer, PRODUCER_TASK_TRACKER_SERVICE
 from authentication.permissions import ReassignTasksPermission
 from tasks.defs import Role, TaskStatus
 from tasks.models import Task, User
+from datetime import datetime
+from schema_validator import Validator
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -16,11 +19,12 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class TaskSerializer(serializers.ModelSerializer):
-    assignee = serializers.CharField(required=False)
+    jira_id = serializers.CharField(required=True)
+    assignee_id = serializers.IntegerField(required=False)
 
     class Meta:
         model = Task
-        fields = ("description", "status", "assignee")
+        fields = ("description", "status", "assignee_id", "jira_id")
 
 
 class UserList(generics.ListCreateAPIView):
@@ -42,9 +46,44 @@ class CreateTaskView(generics.CreateAPIView):
             total_assignees = assignee_queryset.count()
             random_index = random.randint(0, total_assignees - 1)
             assignee = assignee_queryset[random_index]
-            serializer.validated_data["assignee"] = assignee
+            serializer.validated_data["assignee_id"] = assignee.id
+        else:
+            return Response(status=400, data="No popugs suitable for work")
+        task = serializer.save()
+        event = {
+            "event_id": str(uuid.uuid4()),
+            "event_name": "TaskCreated",
+            "event_version": 1,
+            "event_time": str(datetime.now()),
+            "producer": PRODUCER_TASK_TRACKER_SERVICE,
+            "data": {
+                "public_id": str(task.public_id),
+                "assignee_public_id": str(assignee.public_id),
+                "description": task.description,
+                "status": task.status,
+                "jira_id": task.jira_id
+            },
+        }
 
-        serializer.save()
+        result, errors = Validator().validate_data(schema_name='tasks.created', version=1, data=event)
+        if result:
+            producer.send("tasks-stream", event)
+
+        event = {
+            "event_id": str(uuid.uuid4()),
+            "event_name": "TaskAssigned",
+            "event_version": 1,
+            "event_time": str(datetime.now()),
+            "producer": PRODUCER_TASK_TRACKER_SERVICE,
+            "data": {
+                "public_id": str(task.public_id),
+                "assignee_public_id": str(assignee.public_id),
+            },
+        }
+
+        result, errors = Validator().validate_data(schema_name='tasks.assigned', version=1, data=event)
+        if result:
+            producer.send("tasks-history", event)
 
 
 class ReassignTasksView(views.APIView):
@@ -63,6 +102,21 @@ class ReassignTasksView(views.APIView):
                 assignee = assignee_queryset[random_index]
                 task.assignee = assignee
                 task.save()
+
+                event = {
+                    "event_id": str(uuid.uuid4()),
+                    "event_version": 1,
+                    "event_time": str(datetime.now()),
+                    "producer": PRODUCER_TASK_TRACKER_SERVICE,
+                    "event_name": "TaskAssigned",
+                    "data": {
+                        "public_id": str(task.public_id),
+                        "assignee_public_id": str(assignee.public_id),
+                    },
+                }
+                result, errors = Validator().validate_data(schema_name='tasks.assigned', version=1, data=event)
+                if result:
+                    producer.send("tasks-history", event)
 
         serializer = TaskSerializer(opened_tasks, many=True)
         return Response(serializer.data)
@@ -83,6 +137,21 @@ class CloseTaskView(views.APIView):
 
         task.status = TaskStatus.CLOSED.value
         task.save(update_fields=["status"])
+
+        event = {
+            "event_id": str(uuid.uuid4()),
+            "event_version": 1,
+            "event_time": str(datetime.now()),
+            "producer": PRODUCER_TASK_TRACKER_SERVICE,
+            "event_name": "TaskClosed",
+            "data": {
+                "public_id": str(task.public_id),
+            },
+        }
+        result, errors = Validator().validate_data(schema_name='tasks.closed', version=1, data=event)
+        if result:
+            producer.send("tasks-history", event)
+
         return Response(status=200, data="ok")
 
 

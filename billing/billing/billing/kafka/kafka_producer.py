@@ -1,8 +1,8 @@
 from kafka import KafkaProducer
 import json
 
-PRODUCER_AUTH_SERVICE = "auth_service"
 
+PRODUCER_BILLING_SERVICE = "billing_service"
 
 # produce json messages
 producer = KafkaProducer(

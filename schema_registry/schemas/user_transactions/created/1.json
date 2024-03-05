@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+
+  "title": "UserTransaction.Created.v1",
+  "description": "json schema for user_transactions created event (version 1)",
+
+  "definitions": {
+    "data": {
+      "type": "object",
+      "properties": {
+        "public_id": {
+          "type": "string"
+        },
+        "user_public_id": {
+          "type": "string"
+        },
+        "task_public_id": {
+          "type": "string"
+        },
+        "billing_cycle_public_id": {
+          "type": "string"
+        },
+        "debit": {
+          "type": "integer"
+        },
+        "credit": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "public_id",
+        "user_public_id",
+        "task_public_id",
+        "billing_cycle_public_id",
+        "reason"
+      ]
+    }
+  },
+
+  "type": "object",
+
+  "properties": {
+    "event_id":      { "type": "string" },
+    "event_version": { "enum": [1] },
+    "event_name":    { "type": "string" },
+    "event_time":    { "type": "string" },
+    "producer":      { "type": "string" },
+
+    "data": { "$ref": "#/definitions/data" }
+  },
+
+  "required": [
+    "event_id",
+    "event_version",
+    "event_name",
+    "event_time",
+    "producer",
+    "data"
+  ]
+}
