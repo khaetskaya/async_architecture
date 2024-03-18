@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% if user.is_authenticated %}
+Welcome, {{ user.username }}!
+{% else %}
+<a href="{% url 'login_redirect' %}">Login with Oauth</a>
+{% endif %}
+
+{% endblock %}
+<input type="hidden" name="next" value="{{ next }}" />
